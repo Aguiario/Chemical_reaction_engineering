@@ -5,21 +5,41 @@ import scipy
 import sympy as sp
 import cantera as ct
 
-
 # Constants
-R = 8.314  # Universal gas constant, J/(mol·K)
-T0 = 298.15  # Standard temperature, K
-P = 101325  # Standard pressure (1 atm in Pa)
-df = pd.read_excel('SP_298K.xlsx')  # Load data from an Excel file containing thermodynamic properties
+R = 8.314  # Universal gas constant in J/(mol·K)
+T0 = 298.15  # Standard temperature in K
+P = 101325  # Standard atmospheric pressure in Pa
+df = pd.read_excel('SP_298K.xlsx')  # Load thermodynamic properties from an Excel file
 
 def standard_properties(reactants, products):
-    # Create explicit copies of reactants and products' properties from the data frame
-    reactants_properties_298K = df[df['Species'].isin(reactants[:, 0])].copy()
-    products_properties_298K = df[df['Species'].isin(products[:, 0])].copy()
+    """
+    Calculate standard thermodynamic properties (ΔH°, ΔG°, ΔS°) at 298 K for a reaction.
 
-    # Add columns for coefficients and weighted properties
-    reactants_properties_298K["Coefficient"] = reactants[:, 1].astype(float)
-    products_properties_298K["Coefficient"] = products[:, 1].astype(float)
+    Parameters:
+        reactants (list of tuples): Reactant species and their stoichiometric coefficients.
+        products (list of tuples): Product species and their stoichiometric coefficients.
+
+    Returns:
+        tuple: ΔG°, ΔH°, ΔS°, overall stoichiometric coefficient, and data frames for reactants and products.
+    """
+    # Map reactants and products to their stoichiometric coefficients
+    reactants_dict = {reactant[0]: float(reactant[1]) for reactant in reactants}
+    products_dict = {product[0]: float(product[1]) for product in products}
+
+    # Filter properties for reactants and products based on the species names
+    reactants_properties_298K = df[df['Species'].isin(reactants_dict.keys())].copy()
+    products_properties_298K = df[df['Species'].isin(products_dict.keys())].copy()
+
+    # Assign stoichiometric coefficients to the respective species
+    reactants_properties_298K["Coefficient"] = reactants_properties_298K["Species"].map(reactants_dict)
+    products_properties_298K["Coefficient"] = products_properties_298K["Species"].map(products_dict)
+
+    # Compute the total stoichiometric coefficient
+    vi = products_properties_298K["Coefficient"].sum() + reactants_properties_298K["Coefficient"].sum()
+
+    # Use absolute values of coefficients for property calculations
+    reactants_properties_298K["Coefficient"] = np.abs(reactants_properties_298K["Coefficient"])
+    products_properties_298K["Coefficient"] = np.abs(products_properties_298K["Coefficient"])
 
     # Calculate weighted properties for reactants
     reactants_properties_298K["Weighted_DHf"] = reactants_properties_298K["DHf°[kJ/mol]"] * reactants_properties_298K["Coefficient"]
@@ -31,130 +51,86 @@ def standard_properties(reactants, products):
     products_properties_298K["Weighted_DGf"] = products_properties_298K["DGf°[kJ/mol]"] * products_properties_298K["Coefficient"]
     products_properties_298K["Weighted_S"] = products_properties_298K["S°[J/K·mol]"] * products_properties_298K["Coefficient"]
 
-    # Compute the weighted sums for products and reactants
+    # Compute overall property changes (ΔH°, ΔG°, ΔS°)
     dH_f0 = products_properties_298K["Weighted_DHf"].sum() - reactants_properties_298K["Weighted_DHf"].sum()
     dG_f0 = products_properties_298K["Weighted_DGf"].sum() - reactants_properties_298K["Weighted_DGf"].sum()
 
-    # Option to calculate ΔSº directly from the table
-    # dS0 = products_properties_298K["Weighted_S"].sum() - reactants_properties_298K["Weighted_S"].sum()
-
-    # Assuming ΔHº and ΔSº are temperature-independent, calculate ΔSº using the relation ΔGº = ΔHº - TΔSº
+    # Calculate ΔS° using the relationship ΔG° = ΔH° - TΔS°
     dS0 = (dG_f0 - dH_f0) / T0
 
-    # Print the filtered rows for debug or validation
-    print("Reactants Properties")
-    print(reactants_properties_298K)
-    print("\n")
-    print("Products Properties")
-    print(products_properties_298K)
-    print("\n")
+    # Display detailed reactant and product properties for debugging
+    print("Reactant Properties:\n", reactants_properties_298K, "\n")
+    print("Product Properties:\n", products_properties_298K, "\n")
 
-    # Output results with a qualitative description
-    print(f"ΔGº: {dG_f0} [kJ/mol], and it {'is not' if dG_f0 > 0 else 'is'} spontaneous.")
-    print(f"ΔHº: {dH_f0} [kJ/mol], and it {'is endothermic.' if dH_f0 > 0 else 'is exothermic.'}")
-    print(f"ΔSº: {dS0} [J/K·mol], and the disorder {'increases.' if dH_f0 > 0 else 'decreases.'}")
+    # Print thermodynamic results with descriptions
+    print(f"ΔG°: {dG_f0} kJ/mol, {'non-spontaneous' if dG_f0 > 0 else 'spontaneous'}.")
+    print(f"ΔH°: {dH_f0} kJ/mol, {'endothermic' if dH_f0 > 0 else 'exothermic'}.")
+    print(f"ΔS°: {dS0} J/(K·mol), {'increased disorder' if dS0 > 0 else 'decreased disorder'}.")
+    print(f"Net Stoichiometric Coefficient (v_i): {vi}")
 
-    # Return calculated values and data frames for further use
-    return dG_f0, dH_f0, dS0, reactants_properties_298K, products_properties_298K
+    return dG_f0, dH_f0, dS0, vi, reactants_properties_298K, products_properties_298K
 
-def properties_temperature(temperatures, dG_f0, dS0):
-    # Calculation of ΔGº for each temperature
-    # Using the relation: ΔGº(T2) = ΔGº(T1) + ΔSº(T2 - T1)
-    dG_values = dG_f0 + dS0 * (temperatures - T0)
+def properties_temperature(temperatures, dH_f0, dS0):
+    """
+    Compute temperature-dependent properties (ΔG° and equilibrium constants).
 
-    # Calculation of K_a and ln(K_a)
-    # ln(K_a) = -ΔGº / (R * T) and K_a = exp(ln(K_a))
-    ln_Ka_values = -dG_values / (R * temperatures)
+    Parameters:
+        temperatures (array): Array of temperatures in Kelvin.
+        dH_f0 (float): Standard enthalpy change at 298 K in kJ/mol.
+        dS0 (float): Standard entropy change at 298 K in J/(K·mol).
+
+    Returns:
+        DataFrame: Temperature, ΔG°, ln(K_a), and K_a values.
+    """
+    # Calculate ΔG° at each temperature
+    dG_values = dH_f0 - dS0 * temperatures
+
+    # Compute ln(K_a) and equilibrium constants K_a
+    ln_Ka_values = -dG_values * 1000 / (R * temperatures)  # Convert ΔG to J/mol for consistency
     Ka_values = np.exp(ln_Ka_values)
 
-    # Create a DataFrame with the results
+    # Create a results DataFrame
     results = pd.DataFrame({
-        'T (K)': temperatures,             # Temperature in Kelvin
-        'ΔGº (kJ/mol)': dG_values,        # Gibbs free energy change at each temperature
-        'ln(Ka)': ln_Ka_values,           # Natural logarithm of the equilibrium constant
-        'Ka': Ka_values                   # Equilibrium constant
-        # 'Xeq': Xeq_values                # Uncomment if equilibrium composition is added
+        'Temperature (K)': temperatures,
+        'ΔG° (kJ/mol)': dG_values,
+        'ln(K_a)': ln_Ka_values,
+        'K_a': Ka_values
     })
-    
-    # Print the results table
+
+    # Display results
     print(results)
-    
-    # Return the results as a DataFrame
     return results
 
-def convert_equilibrium_constants(K_type, K_value, T=None, delta_n=0, P_total=None, C_total=None):
+def graphs(results):
     """
-    Convierte entre diferentes constantes de equilibrio: Kc, Kp, Ky, Kx, Ka.
-    
-    Parámetros:
-        K_type (str): El tipo de constante dada ('c', 'p', 'y', 'x', 'a').
-        K_value (float): El valor de la constante.
-        T (float): Temperatura en Kelvin (obligatoria para Kp y Ky).
-        delta_n (float): Cambio en moles gaseosos (productos - reactivos).
-        P_total (float): Presión total (obligatoria para Ky, Ka y Kp si es relevante).
-        C_total (float): Concentración total en el sistema (obligatoria para Ky y Kx si es relevante).
-    
-    Retorna:
-        dict: Equivalencias entre las constantes de equilibrio.
+    Generate plots for thermodynamic relationships.
+
+    Parameters:
+        results (DataFrame): DataFrame containing temperature, ΔG°, ln(K_a), and K_a values.
     """
-    R = 0.08206  # Constante de los gases en L·atm·mol^-1·K^-1
-    
-    Kc = Kp = Ky = Kx = Ka = None
+    # Plot ln(K_a) vs 1/T
+    plt.figure()
+    plt.plot(1 / np.array(results["Temperature (K)"]), results["ln(K_a)"], marker='o', label='ln(K_a) vs 1/T')
+    plt.xlabel('1/T (1/K)')
+    plt.ylabel('ln(K_a)')
+    plt.title('ln(K_a) vs 1/T')
+    plt.grid()
+    plt.show()
 
-    if K_type.lower() == 'c':  # Kc está dado
-        Kc = K_value
-        if T is not None:
-            Kp = Kc * (R * T) ** delta_n
-        if P_total is not None and C_total is not None:
-            Ky = Kc * (C_total / P_total) ** delta_n
-            Kx = Ky  # Si no hay diferencias específicas para Kx
-        if Ky is not None and P_total is not None:
-            Ka = Ky * P_total
+    # Plot ln(K_a) vs T
+    plt.figure()
+    plt.plot(results["Temperature (K)"], results["ln(K_a)"], marker='o', color='orange', label='ln(K_a) vs T')
+    plt.xlabel('Temperature (K)')
+    plt.ylabel('ln(K_a)')
+    plt.title('ln(K_a) vs Temperature')
+    plt.grid()
+    plt.show()
 
-    elif K_type.lower() == 'p':  # Kp está dado
-        Kp = K_value
-        if T is not None:
-            Kc = Kp / (R * T) ** delta_n
-        if P_total is not None:
-            Ky = Kp / (P_total ** delta_n)
-            Kx = Ky  # Si no hay diferencias específicas para Kx
-        if Ky is not None and P_total is not None:
-            Ka = Ky * P_total
-
-    elif K_type.lower() == 'y':  # Ky está dado
-        Ky = K_value
-        if P_total is not None:
-            Kp = Ky * P_total ** delta_n
-        if C_total is not None and P_total is not None:
-            Kc = Ky * (P_total / C_total) ** delta_n
-        if P_total is not None:
-            Ka = Ky * P_total
-        Kx = Ky  # Si no hay diferencias específicas para Kx
-
-    elif K_type.lower() == 'x':  # Kx está dado
-        Kx = K_value
-        Ky = Kx  # Asumiendo equivalencia entre Kx y Ky
-        if P_total is not None:
-            Kp = Ky * P_total ** delta_n
-        if C_total is not None and P_total is not None:
-            Kc = Ky * (P_total / C_total) ** delta_n
-        if P_total is not None:
-            Ka = Ky * P_total
-
-    elif K_type.lower() == 'a':  # Ka está dado
-        Ka = K_value
-        if P_total is not None:
-            Ky = Ka / P_total
-            Kx = Ky  # Si no hay diferencias específicas para Kx
-            if T is not None:
-                Kp = Ky * P_total ** delta_n
-            if C_total is not None:
-                Kc = Ky * (P_total / C_total) ** delta_n
-
-    else:
-        raise ValueError("K_type debe ser 'c' (Kc), 'p' (Kp), 'y' (Ky), 'x' (Kx), o 'a' (Ka).")
-    
-    return {"Kc": Kc, "Kp": Kp, "Ky": Ky, "Kx": Kx, "Ka": Ka}
-
-
-
+    # Plot ΔG° vs T
+    plt.figure()
+    plt.plot(results["Temperature (K)"], results["ΔG° (kJ/mol)"], marker='o', color='orange', label='ΔG° vs T')
+    plt.xlabel('Temperature (K)')
+    plt.ylabel('ΔG° (kJ/mol)')
+    plt.title('ΔG° vs Temperature')
+    plt.grid()
+    plt.show()
