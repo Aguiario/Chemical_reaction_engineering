@@ -56,7 +56,10 @@ def standard_properties(reactants, products):
     dG_f0 = products_properties_298K["Weighted_DGf"].sum() - reactants_properties_298K["Weighted_DGf"].sum()
 
     # Calculate ΔS° using the relationship ΔG° = ΔH° - TΔS°
-    dS0 = (dG_f0 - dH_f0) / T0
+    dS0 = (dH_f0 - dG_f0) / T0
+
+    ln_Ka_0 = -dG_f0 * 1000 / (R * T0)  # Convert ΔG to J/mol for consistency
+    Ka_0 = np.exp(ln_Ka_0)
 
     # Display detailed reactant and product properties for debugging
     print("Reactant Properties:\n", reactants_properties_298K, "\n")
@@ -65,7 +68,9 @@ def standard_properties(reactants, products):
     # Print thermodynamic results with descriptions
     print(f"ΔG°: {dG_f0} kJ/mol, {'non-spontaneous' if dG_f0 > 0 else 'spontaneous'}.")
     print(f"ΔH°: {dH_f0} kJ/mol, {'endothermic' if dH_f0 > 0 else 'exothermic'}.")
-    print(f"ΔS°: {dS0} J/(K·mol), {'increased disorder' if dS0 > 0 else 'decreased disorder'}.")
+    print(f"ΔS°: {dS0} kJ/(K·mol), {'increased disorder' if dS0 > 0 else 'decreased disorder'}.")
+    print(f"ln(K_a): {ln_Ka_0}")
+    print(f"K_a: {Ka_0}")
     print(f"Net Stoichiometric Coefficient (v_i): {vi}")
 
     return dG_f0, dH_f0, dS0, vi, reactants_properties_298K, products_properties_298K
