@@ -50,7 +50,7 @@ def standard_properties(reactants, products):
     print("\n")
 
     # Output results with a qualitative description
-    print(f"ΔGº: {dG_f0} [kJ/mol], and it {'is' if dG_f0 > 0 else 'is not'} spontaneous.")
+    print(f"ΔGº: {dG_f0} [kJ/mol], and it {'is not' if dG_f0 > 0 else 'is'} spontaneous.")
     print(f"ΔHº: {dH_f0} [kJ/mol], and it {'is endothermic.' if dH_f0 > 0 else 'is exothermic.'}")
     print(f"ΔSº: {dS0} [J/K·mol], and the disorder {'increases.' if dH_f0 > 0 else 'decreases.'}")
 
