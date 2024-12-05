@@ -5,12 +5,14 @@ import scipy
 import sympy as sp
 import cantera as ct
 from sympy import symbols, Eq, solve
+import math
 
 # Constants
 R = 8.314  # Universal gas constant in J/(mol·K)
 T0 = 298.15  # Standard temperature in K
 P = 1  # Standard atmospheric pressure in atm
 df = pd.read_excel('SP_298K.xlsx')  # Load thermodynamic properties from an Excel file
+x = symbols('x')
 
 def standard_properties(reactants, products, P = 1, P0 = 1):
     """
@@ -24,33 +26,33 @@ def standard_properties(reactants, products, P = 1, P0 = 1):
         tuple: ΔG°, ΔH°, ΔS°, overall stoichiometric coefficient, and data frames for reactants and products.
     """
     # Map reactants and products to their stoichiometric coefficients
-    reactants_dict = {reactant[0]: float(reactant[1]) for reactant in reactants}
-    products_dict = {product[0]: float(product[1]) for product in products}
+    r = {reactant[0]: float(reactant[1]) for reactant in reactants}
+    p = {product[0]: float(product[1]) for product in products}
 
     # Filter properties for reactants and products based on the species names
-    reactants_properties_298K = df[df['Species'].isin(reactants_dict.keys())].copy()
-    products_properties_298K = df[df['Species'].isin(products_dict.keys())].copy()
+    r_298K = df[df['Species'].isin(r.keys())].copy()
+    p_298K = df[df['Species'].isin(p.keys())].copy()
 
     # Assign stoichiometric coefficients to the respective species
-    reactants_properties_298K["Coefficient"] = reactants_properties_298K["Species"].map(reactants_dict)
-    products_properties_298K["Coefficient"] = products_properties_298K["Species"].map(products_dict)
+    r_298K["Coefficient"] = r_298K["Species"].map(r)
+    p_298K["Coefficient"] = p_298K["Species"].map(p)
 
     # Compute the total stoichiometric coefficient
-    vi = products_properties_298K["Coefficient"].sum() - reactants_properties_298K["Coefficient"].sum()
+    vi = p_298K["Coefficient"].sum() - r_298K["Coefficient"].sum()
 
     # Calculate weighted properties for reactants
-    reactants_properties_298K["Weighted_DHf"] = reactants_properties_298K["DHf°[kJ/mol]"] * reactants_properties_298K["Coefficient"]
-    reactants_properties_298K["Weighted_DGf"] = reactants_properties_298K["DGf°[kJ/mol]"] * reactants_properties_298K["Coefficient"]
-    reactants_properties_298K["Weighted_S"] = reactants_properties_298K["S°[J/K·mol]"] * reactants_properties_298K["Coefficient"]
+    r_298K["Weighted_DHf"] = r_298K["DHf°[kJ/mol]"] * r_298K["Coefficient"]
+    r_298K["Weighted_DGf"] = r_298K["DGf°[kJ/mol]"] * r_298K["Coefficient"]
+    r_298K["Weighted_S"] = r_298K["S°[J/K·mol]"] * r_298K["Coefficient"]
 
     # Calculate weighted properties for products
-    products_properties_298K["Weighted_DHf"] = products_properties_298K["DHf°[kJ/mol]"] * products_properties_298K["Coefficient"]
-    products_properties_298K["Weighted_DGf"] = products_properties_298K["DGf°[kJ/mol]"] * products_properties_298K["Coefficient"]
-    products_properties_298K["Weighted_S"] = products_properties_298K["S°[J/K·mol]"] * products_properties_298K["Coefficient"]
+    p_298K["Weighted_DHf"] = p_298K["DHf°[kJ/mol]"] * p_298K["Coefficient"]
+    p_298K["Weighted_DGf"] = p_298K["DGf°[kJ/mol]"] * p_298K["Coefficient"]
+    p_298K["Weighted_S"] = p_298K["S°[J/K·mol]"] * p_298K["Coefficient"]
 
     # Compute overall property changes (ΔH°, ΔG°, ΔS°)
-    dH_f0 = products_properties_298K["Weighted_DHf"].sum() - reactants_properties_298K["Weighted_DHf"].sum()
-    dG_f0 = products_properties_298K["Weighted_DGf"].sum() - reactants_properties_298K["Weighted_DGf"].sum()
+    dH_f0 = p_298K["Weighted_DHf"].sum() - r_298K["Weighted_DHf"].sum()
+    dG_f0 = p_298K["Weighted_DGf"].sum() - r_298K["Weighted_DGf"].sum()
 
     # Calculate ΔS° using the relationship ΔG° = ΔH° - TΔS°
     dS0 = (dH_f0 - dG_f0) / T0
@@ -59,22 +61,21 @@ def standard_properties(reactants, products, P = 1, P0 = 1):
     Ka_0 = np.exp(ln_Ka_0)
 
     # Mass balance using conversion
-    x = symbols('x')
     # Moles per component
-    reactants_properties_298K["n [mol]"] = reactants_properties_298K["Coefficient"] * (1-x)
-    products_properties_298K["n [mol]"] = products_properties_298K["Coefficient"] * x
+    r_298K["n [mol]"] = r_298K["Coefficient"] * (1-x)
+    p_298K["n [mol]"] = p_298K["Coefficient"] * x
     # Total number of moles
-    n_total = reactants_properties_298K["n [mol]"].sum() + products_properties_298K["n [mol]"].sum()
+    n_total = r_298K["n [mol]"].sum() + p_298K["n [mol]"].sum()
     # Mass fraction of each component
-    reactants_properties_298K["y_i"] = reactants_properties_298K["n [mol]"]/n_total
-    products_properties_298K["y_i"] = products_properties_298K["n [mol]"]/n_total
+    r_298K["y_i"] = r_298K["n [mol]"]/n_total
+    p_298K["y_i"] = p_298K["n [mol]"]/n_total
     # Calculate Ky
-    K_y = ((reactants_properties_298K["y_i"]**reactants_properties_298K["Coefficient"]).prod())/((products_properties_298K["y_i"]**products_properties_298K["Coefficient"]).prod()) 
+    K_y = ((r_298K["y_i"]**r_298K["Coefficient"]).prod())/((p_298K["y_i"]**p_298K["Coefficient"]).prod()) 
     K_y = K_y *(P/P0)**vi
 
     # Display detailed reactant and product properties for debugging
-    print("Reactant Properties:\n", reactants_properties_298K, "\n")
-    print("Product Properties:\n", products_properties_298K, "\n")
+    print("Reactant Properties:\n", r_298K, "\n")
+    print("Product Properties:\n", p_298K, "\n")
 
     # Print thermodynamic results with descriptions
     print(f"ΔG°: {dG_f0} kJ/mol, {'non-spontaneous' if dG_f0 > 0 else 'spontaneous'}.")
@@ -86,9 +87,9 @@ def standard_properties(reactants, products, P = 1, P0 = 1):
     print(f"Net Stoichiometric Coefficient (v_i): {vi}")
     print(f"Total number of moles (n_t): {n_total}")
 
-    return dG_f0, dH_f0, dS0, vi, K_y, reactants_properties_298K, products_properties_298K
+    return dG_f0, dH_f0, dS0, vi, K_y, r_298K, p_298K
 
-def properties_temperature(temperatures, dH_f0, dS0, K_y = None, Convertion = 0.8):
+def properties_temperature(temperatures, dH_f0, dS0, K_y = None, Convertion = 0):
     """
     Compute temperature-dependent properties (ΔG° and equilibrium constants).
 
@@ -115,22 +116,26 @@ def properties_temperature(temperatures, dH_f0, dS0, K_y = None, Convertion = 0.
         'K_a': Ka_values,
     })
 
-    if K_y:
-        x = symbols('x')
-        if isinstance(K_y, Eq):
-            Convertion = []
-            for K_a_i in results["K_a"]:
+    if K_y and Convertion == 0:
+        Convertion = []
+        for K_a_i in results["K_a"]:
+            if K_a_i >  1e10:
+                Convertion.append(1)
+            else:
                 equation = Eq(K_y, K_a_i)
                 solutions = solve(equation, x)
+                solutions = [sol for sol in solutions if sol.is_real and sol > 0]
                 Convertion.append(solutions[0])
-        else:
-            Convertion = K_y
-
-    
         results['X'] = Convertion
+    elif K_y and Convertion > 0:
+        K_y = K_y.subs(x,0.8).evalf()
+        print(f"K_y = {K_y} for a convertion of {Convertion}")
+        Tx = (dH_f0*1000) / (dS0*1000 - R*math.log(K_y))
+        print(f"For a conversion {Convertion} a temperature of {Tx} K is required")
+    
 
     # Display results
-    print(results)
+    print(results)        
     return results
 
 def graphs(results):
@@ -176,6 +181,3 @@ def graphs(results):
         plt.title('X vs Temperature')
         plt.grid()
         plt.show()
-
-
-
