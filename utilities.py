@@ -4,14 +4,15 @@ import matplotlib.pyplot as plt
 import scipy
 import sympy as sp
 import cantera as ct
+from sympy import symbols, Eq, solve
 
 # Constants
 R = 8.314  # Universal gas constant in J/(mol·K)
 T0 = 298.15  # Standard temperature in K
-P = 101325  # Standard atmospheric pressure in Pa
+P = 1  # Standard atmospheric pressure in atm
 df = pd.read_excel('SP_298K.xlsx')  # Load thermodynamic properties from an Excel file
 
-def standard_properties(reactants, products):
+def standard_properties(reactants, products, P = 1, P0 = 1):
     """
     Calculate standard thermodynamic properties (ΔH°, ΔG°, ΔS°) at 298 K for a reaction.
 
@@ -35,11 +36,7 @@ def standard_properties(reactants, products):
     products_properties_298K["Coefficient"] = products_properties_298K["Species"].map(products_dict)
 
     # Compute the total stoichiometric coefficient
-    vi = products_properties_298K["Coefficient"].sum() + reactants_properties_298K["Coefficient"].sum()
-
-    # Use absolute values of coefficients for property calculations
-    reactants_properties_298K["Coefficient"] = np.abs(reactants_properties_298K["Coefficient"])
-    products_properties_298K["Coefficient"] = np.abs(products_properties_298K["Coefficient"])
+    vi = products_properties_298K["Coefficient"].sum() - reactants_properties_298K["Coefficient"].sum()
 
     # Calculate weighted properties for reactants
     reactants_properties_298K["Weighted_DHf"] = reactants_properties_298K["DHf°[kJ/mol]"] * reactants_properties_298K["Coefficient"]
@@ -61,6 +58,20 @@ def standard_properties(reactants, products):
     ln_Ka_0 = -dG_f0 * 1000 / (R * T0)  # Convert ΔG to J/mol for consistency
     Ka_0 = np.exp(ln_Ka_0)
 
+    # Mass balance using conversion
+    x = symbols('x')
+    # Moles per component
+    reactants_properties_298K["n [mol]"] = reactants_properties_298K["Coefficient"] * (1-x)
+    products_properties_298K["n [mol]"] = products_properties_298K["Coefficient"] * x
+    # Total number of moles
+    n_total = reactants_properties_298K["n [mol]"].sum() + products_properties_298K["n [mol]"].sum()
+    # Mass fraction of each component
+    reactants_properties_298K["y_i"] = reactants_properties_298K["n [mol]"]/n_total
+    products_properties_298K["y_i"] = products_properties_298K["n [mol]"]/n_total
+    # Calculate Ky
+    K_y = ((reactants_properties_298K["y_i"]**reactants_properties_298K["Coefficient"]).prod())/((products_properties_298K["y_i"]**products_properties_298K["Coefficient"]).prod()) 
+    K_y = K_y *(P/P0)**vi
+
     # Display detailed reactant and product properties for debugging
     print("Reactant Properties:\n", reactants_properties_298K, "\n")
     print("Product Properties:\n", products_properties_298K, "\n")
@@ -71,11 +82,13 @@ def standard_properties(reactants, products):
     print(f"ΔS°: {dS0} kJ/(K·mol), {'increased disorder' if dS0 > 0 else 'decreased disorder'}.")
     print(f"ln(K_a): {ln_Ka_0}")
     print(f"K_a: {Ka_0}")
+    print(f"K_y: {K_y}")
     print(f"Net Stoichiometric Coefficient (v_i): {vi}")
+    print(f"Total number of moles (n_t): {n_total}")
 
-    return dG_f0, dH_f0, dS0, vi, reactants_properties_298K, products_properties_298K
+    return dG_f0, dH_f0, dS0, vi, K_y, reactants_properties_298K, products_properties_298K
 
-def properties_temperature(temperatures, dH_f0, dS0):
+def properties_temperature(temperatures, dH_f0, dS0, K_y = None, Convertion = 0.8):
     """
     Compute temperature-dependent properties (ΔG° and equilibrium constants).
 
@@ -99,8 +112,22 @@ def properties_temperature(temperatures, dH_f0, dS0):
         'Temperature (K)': temperatures,
         'ΔG° (kJ/mol)': dG_values,
         'ln(K_a)': ln_Ka_values,
-        'K_a': Ka_values
+        'K_a': Ka_values,
     })
+
+    if K_y:
+        x = symbols('x')
+        if isinstance(K_y, Eq):
+            Convertion = []
+            for K_a_i in results["K_a"]:
+                equation = Eq(K_y, K_a_i)
+                solutions = solve(equation, x)
+                Convertion.append(solutions[0])
+        else:
+            Convertion = K_y
+
+    
+        results['X'] = Convertion
 
     # Display results
     print(results)
@@ -139,3 +166,16 @@ def graphs(results):
     plt.title('ΔG° vs Temperature')
     plt.grid()
     plt.show()
+
+    if "X" in results.columns:
+        # Plot X vs T
+        plt.figure()
+        plt.plot(results["Temperature (K)"], results["X"], marker='o', color='blue', label='X vs T')
+        plt.xlabel('Temperature (K)')
+        plt.ylabel('X')
+        plt.title('X vs Temperature')
+        plt.grid()
+        plt.show()
+
+
+
