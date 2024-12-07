@@ -11,6 +11,7 @@ import math
 R = 8.314  # Universal gas constant in J/(mol·K)
 T0 = 298.15  # Standard temperature in K
 P = 1  # Standard atmospheric pressure in atm
+# data source: https://www2.chem.wisc.edu/deptfiles/genchem/netorial/modules/thermodynamics/table.htm
 df = pd.read_excel('SP_298K.xlsx')  # Load thermodynamic properties from an Excel file
 x = symbols('x')
 
@@ -138,7 +139,7 @@ def properties_temperature(temperatures, dH_f0, dS0, K_y = None, Convertion = 0)
     print(results)        
     return results
 
-def graphs(results):
+def graphs_T(results):
     """
     Generate plots for thermodynamic relationships.
 
@@ -181,3 +182,54 @@ def graphs(results):
         plt.title('X vs Temperature')
         plt.grid()
         plt.show()
+
+def analysis_pressures(results, dG_f0, pressures, temperature):
+    """
+    Perform analysis of thermodynamic properties at varying pressures.
+    """
+    temperatures = np.full(10, temperature)
+    results["Temperature (K)"] = temperatures
+    results["ΔG° (kJ/mol)"] = dG_f0 + 8.314 / 1000 * temperatures * np.log(pressures)
+    results["ln(K_a)"] = -np.array(results["ΔG° (kJ/mol)"]) * 1000 / (8.314 * temperatures)
+    results["K_a"] = np.exp(results["ln(K_a)"])
+    results["Pressure (atm)"] = pressures
+    # Move the "Pressure (atm)" column to the second position
+    cols = list(results.columns)  # Get all column names as a list
+    cols.insert(1, cols.pop(cols.index("Pressure (atm)")))  # Insert the column at the second position
+    results = results[cols]  # Reorganize the DataFrame with the new column order
+    print(results)
+    return results
+
+def graphs_P(results):
+    """
+    Generate plots for thermodynamic relationships involving pressure (P).
+
+    Parameters:
+        results (DataFrame): DataFrame containing Pressure (atm), ΔG°, ln(K_a), and K_a values.
+    """
+    # Plot ln(K_a) vs Pressure
+    plt.figure()
+    plt.plot(1/ np.array(results["Pressure (atm)"]), results["ln(K_a)"], marker='o', label='ln(K_a) vs Pressure')
+    plt.xlabel('1/P (1/atm)')
+    plt.ylabel('ln(K_a)')
+    plt.title('ln(K_a) vs Pressure')
+    plt.grid()
+    plt.show()
+
+    # Plot ln(K_a) vs Pressure
+    plt.figure()
+    plt.plot(results["Pressure (atm)"], results["ln(K_a)"], marker='o', color='green', label='K_a vs Pressure')
+    plt.xlabel('Pressure (atm)')
+    plt.ylabel('ln(K_a)')
+    plt.title('ln(K_a) vs Pressure')
+    plt.grid()
+    plt.show()
+
+    # Plot ΔG° vs Pressure
+    plt.figure()
+    plt.plot(results["Pressure (atm)"], results["ΔG° (kJ/mol)"], marker='o', color='orange', label='ΔG° vs Pressure')
+    plt.xlabel('Pressure (atm)')
+    plt.ylabel('ΔG° (kJ/mol)')
+    plt.title('ΔG° vs Pressure')
+    plt.grid()
+    plt.show()
