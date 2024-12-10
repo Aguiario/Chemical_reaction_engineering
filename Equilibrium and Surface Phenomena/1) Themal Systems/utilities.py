@@ -183,11 +183,11 @@ def graphs_T(results):
         plt.grid()
         plt.show()
 
-def analysis_pressures(results, dG_f0, pressures, temperature):
+def analysis_pressures(results, dG_f0, pressures, temperature, n):
     """
     Perform analysis of thermodynamic properties at varying pressures.
     """
-    temperatures = np.full(10, temperature)
+    temperatures = np.full(n, temperature)
     results["Temperature (K)"] = temperatures
     results["ΔG° (kJ/mol)"] = dG_f0 + 8.314 / 1000 * temperatures * np.log(pressures)
     results["ln(K_a)"] = -np.array(results["ΔG° (kJ/mol)"]) * 1000 / (8.314 * temperatures)
