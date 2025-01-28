@@ -72,7 +72,7 @@ def standard_properties(reactants, products, P = 1, P0 = 1):
     p_298K["y_i"] = p_298K["n [mol]"]/n_total
     # Calculate Ky
     K_y = ((r_298K["y_i"]**r_298K["Coefficient"]).prod())/((p_298K["y_i"]**p_298K["Coefficient"]).prod()) 
-    K_y = K_y *(P/P0)**vi
+    K_y = K_y *(P/P0)**-vi
 
     # Display detailed reactant and product properties for debugging
     print("Reactant Properties:\n", r_298K, "\n")
@@ -120,7 +120,7 @@ def properties_temperature(temperatures, dH_f0, dS0, K_y = None, Convertion = 0)
     if K_y and Convertion == 0:
         Convertion = []
         for K_a_i in results["K_a"]:
-            if K_a_i >  1e10:
+            if K_a_i >  1e5:
                 Convertion.append(1)
             else:
                 equation = Eq(K_y, K_a_i)
